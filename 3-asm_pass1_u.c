@@ -1,4 +1,4 @@
-/***********************************************************************/
+***********************************************************************/
 /*  Program Name: 3-asm_pass1_u.c                                      */
 /*  This program is the part of SIC/XE assembler Pass 1.	  		   */
 /*  The program only identify the symbol, opcode and operand 		   */
@@ -39,6 +39,12 @@ typedef struct
 	char		symb[LEN_SYMBOL];
 	int			address;
 } SYMTAB;
+
+typedef struct 
+{
+	char		obcode[6];
+} OBCODETAB;
+
 
 
 int process_line(LINE *line);
@@ -251,11 +257,14 @@ int process_line(LINE *line)
 
 int main(int argc, char *argv[])
 {
-	int			i, c, line_count;
+	int			i, c, line_count,lenghth = 0,pro_count = 0;
 	char		buf[LEN_SYMBOL];
 	LINE		line;
-	int 		hexNumber,space;
+	int 		hexNumber=0,space=0;
 	SYMTAB 		symtab[10000];
+	char 		Trecord[60] = " ";
+	int         addresstab[10000];
+	OBCODETAB	obcode[10000];
 	if(argc < 2)
 	{
 		printf("Usage: %s fname.asm\n", argv[0]);
@@ -268,6 +277,9 @@ int main(int argc, char *argv[])
 		{
 			for(line_count = 1 ; (c = process_line(&line)) != LINE_EOF; line_count++)
 			{
+				unsigned	recode = line.code;
+				char	hex_string[2];
+				pro_count += 1;
 				if(line.op[0]=='S' && line.op[4] == 'T'){
 					sscanf(line.operand1, "%x", &hexNumber);
 					fmt=hexNumber;
@@ -277,8 +289,15 @@ int main(int argc, char *argv[])
 				else if(c == LINE_COMMENT)
 					printf("\n");
 				else{
-					
-					printf("%06X  %12s %12s %12s %12s\n", fmt, line.symbol, line.op, line.operand1, line.operand2);
+					if(line_count > 1){
+						if(line.fmt == FMT3){
+							recode += 3;
+							sprintf(hex_string, "%X", recode);
+							strcpy(obcode[line_count].obcode, hex_string);
+						}
+					}
+					addresstab[line_count] = fmt; 
+					printf("%06X  %12s %12s %12s %12s    %X %s\n", fmt, line.symbol, line.op, line.operand1, line.operand2, line.code,obcode[line_count].obcode);
 					if(line.symbol[0] != '\0'){
 						strcpy(symtab[line_count].symb, line.symbol);
 						symtab[line_count].address = fmt;
@@ -320,13 +339,73 @@ int main(int argc, char *argv[])
 				}
 						
 			}
-			printf("program length: %X\n",fmt - (space * 2) - hexNumber);
+			pro_count--;
+			lenghth = fmt - (space) - hexNumber;
+			printf("program length: %X  %d\n",lenghth,pro_count);
+			
 			for(int coun=1;coun<line_count;coun++){
 				if(symtab[coun].symb[0]!='\0'){
-					printf("%s : %06X\n",symtab[coun].symb,symtab[coun].address );
+					printf("%s : %06X\n",symtab[coun].symb,symtab[coun].address);
 				}
+			}	
+			ASM_close();
+		}
+		if(ASM_open(argv[1]) == NULL)
+			printf("File not found!!\n");
+		else
+		{
+			int Taddress = addresstab[1];
+			int Tfmt = 0;
+			int Tcount = 0;
+			for(line_count = 1 ; (c = process_line(&line)) != LINE_EOF; line_count++){
+				if(line_count == 1){
+					printf("H%-6s%06X%06X\n",symtab[1].symb,symtab[1].address,lenghth);
+				}
+				if(c == LINE_ERROR)
+					continue;
+				else if(c == LINE_COMMENT)
+					continue;
+				else {
+					if(line.fmt == FMT3){
+						Tfmt += 3;
+					}
+					else if(line.fmt == FMT2){
+						Tfmt += 2;
+					}
+					else if(line.fmt == FMT1){
+						Tfmt += 1;
+					}
+					else if(line.fmt == FMT0){
+						if(line.op[3] == 'D')
+							Tfmt += 3;
+						else if(line.op[3] == 'E')
+							Tfmt += 1;
+						else if(line.op[3] == 'B' && Tfmt > 0){
+							printf("T%06X%02X%s\n",Taddress,Tfmt,Trecord);
+							Taddress = addresstab[line_count+1];	
+							Tfmt = 0;
+						}
+						else if(line.op[3] == 'W' && Tfmt > 0){
+							printf("T%06X%02X%s\n",Taddress,Tfmt,Trecord);
+							Taddress = addresstab[line_count+1];	
+							Tfmt = 0;
+						} 	
+					}
+					if(Tcount == 60){
+						
+						Taddress = addresstab[line_count+1];	
+						Tfmt = 0;
+					}
+				}
+				if(line_count == pro_count){
+					Taddress = addresstab[line_count];
+					printf("T%06X%02X%s\n",Taddress,Tfmt,Trecord);
+				}
+				
+				
 			}
-			
+
+			printf("E%06X\n",lenghth);
 			ASM_close();
 		}
 	}
