@@ -1,4 +1,4 @@
-***********************************************************************/
+/***********************************************************************/
 /*  Program Name: 3-asm_pass1_u.c                                      */
 /*  This program is the part of SIC/XE assembler Pass 1.	  		   */
 /*  The program only identify the symbol, opcode and operand 		   */
@@ -37,7 +37,7 @@ typedef struct
 typedef struct 
 {
 	char		symb[LEN_SYMBOL];
-	int			address;
+	unsigned	address;
 } SYMTAB;
 
 typedef struct 
@@ -255,6 +255,17 @@ int process_line(LINE *line)
 }
 
 
+unsigned findSymbolAddress(SYMTAB symtab[], int num_symbols, const char *search_symbol) {
+    for (int i = 0; i <= num_symbols; i++) {
+        if (strcmp(symtab[i].symb, search_symbol) == 0) {
+            // 找到匹配的symbol，取出address的后三位数
+            return symtab[i].address % 4096  ;
+        }
+    }
+    return 0;
+}
+
+
 int main(int argc, char *argv[])
 {
 	int			i, c, line_count,lenghth = 0,pro_count = 0;
@@ -265,6 +276,7 @@ int main(int argc, char *argv[])
 	char 		Trecord[60] = " ";
 	int         addresstab[10000];
 	OBCODETAB	obcode[10000];
+	int 		NUM_SYMBOLS = 0;
 	if(argc < 2)
 	{
 		printf("Usage: %s fname.asm\n", argv[0]);
@@ -277,8 +289,7 @@ int main(int argc, char *argv[])
 		{
 			for(line_count = 1 ; (c = process_line(&line)) != LINE_EOF; line_count++)
 			{
-				unsigned	recode = line.code;
-				char	hex_string[2];
+				
 				pro_count += 1;
 				if(line.op[0]=='S' && line.op[4] == 'T'){
 					sscanf(line.operand1, "%x", &hexNumber);
@@ -289,19 +300,13 @@ int main(int argc, char *argv[])
 				else if(c == LINE_COMMENT)
 					printf("\n");
 				else{
-					if(line_count > 1){
-						if(line.fmt == FMT3){
-							recode += 3;
-							sprintf(hex_string, "%X", recode);
-							strcpy(obcode[line_count].obcode, hex_string);
-						}
-					}
+					
 					addresstab[line_count] = fmt; 
 					printf("%06X  %12s %12s %12s %12s    %X %s\n", fmt, line.symbol, line.op, line.operand1, line.operand2, line.code,obcode[line_count].obcode);
 					if(line.symbol[0] != '\0'){
 						strcpy(symtab[line_count].symb, line.symbol);
 						symtab[line_count].address = fmt;
-						
+						NUM_SYMBOLS++;
 					}
 					if(line.fmt == FMT3){
 						fmt += 3;
@@ -340,7 +345,10 @@ int main(int argc, char *argv[])
 						
 			}
 			pro_count--;
-			lenghth = fmt - (space) - hexNumber;
+			if(line.fmt == FMT3)
+				lenghth = fmt - (space) - hexNumber;
+			else if (line.fmt == FMT0)
+				lenghth = fmt - (space * 2) - hexNumber;
 			printf("program length: %X  %d\n",lenghth,pro_count);
 			
 			for(int coun=1;coun<line_count;coun++){
@@ -357,7 +365,19 @@ int main(int argc, char *argv[])
 			int Taddress = addresstab[1];
 			int Tfmt = 0;
 			int Tcount = 0;
+			unsigned TA = 0;
+			int pc = 0;
+			int complement = 4096;
+			unsigned disp = 0;
+			char dispchar[3];
+			char wordspace[6];
+			char wordint[6];
+			char bytespace[6];
+			char  byteint[6];
+			int j = 0;
 			for(line_count = 1 ; (c = process_line(&line)) != LINE_EOF; line_count++){
+				unsigned	recode = line.code;
+				char	hex_string[2];
 				if(line_count == 1){
 					printf("H%-6s%06X%06X\n",symtab[1].symb,symtab[1].address,lenghth);
 				}
@@ -366,6 +386,81 @@ int main(int argc, char *argv[])
 				else if(c == LINE_COMMENT)
 					continue;
 				else {
+					if(line_count > 1){
+						if(line.fmt == FMT3 && line.operand1[0] != '\0'){
+							TA = findSymbolAddress(symtab, pro_count, line.operand1);
+							pc = Tfmt + 3;
+							recode += 3;
+							if(pc > TA)
+								disp = TA + (complement-pc);
+							else
+								disp = TA - pc;
+							sprintf(hex_string, "%X", recode);
+							strcpy(obcode[line_count].obcode, hex_string);
+							obcode[line_count].obcode[2] = '2';
+							sprintf(dispchar, "%X", disp);
+							if(strlen(dispchar) == 2){
+								obcode[line_count].obcode[3] = '0';
+								strcpy(obcode[line_count].obcode + 4, dispchar);
+							}
+							else if(strlen(dispchar) == 1){
+								obcode[line_count].obcode[3] = '0';
+								obcode[line_count].obcode[4] = '0';
+								strcpy(obcode[line_count].obcode + 5, dispchar);
+							}
+							else if(strlen(dispchar) == 3){
+								strcpy(obcode[line_count].obcode + 3, dispchar);
+							}
+							//printf("%s %s %s %d\n",line.op,line.operand1 ,obcode[line_count].obcode,Tcount);
+							strcpy(Trecord + Tcount, obcode[line_count].obcode);
+							Tcount += 6;
+						}
+						else if(line.fmt == FMT0 && line.op[0] == 'B'){
+							
+							if(line.operand1[0] == 'X'){
+								j = 0;
+								for(int i = 2;i<strlen(line.operand1)-1;i++){
+									bytespace[j] = line.operand1[i];
+									j++;
+								}
+								strcpy(Trecord + Tcount, bytespace);
+								Tcount += strlen(bytespace);
+							}
+							else if(line.operand1[0] == 'C'){
+								for(int i = 2;i<strlen(line.operand1)-1;i++){
+									sprintf(&byteint[i * 2], "%02X", line.operand1[i]);
+								}
+								strcpy(Trecord + Tcount, bytespace);
+								Tcount += strlen(bytespace);
+							}
+								
+						}
+						else if(line.fmt == FMT0 && line.op[0] == 'W'){
+							int wordlength = strlen(line.operand1);
+							int i;
+							for(i = 0;i < (6 - wordlength);i ++){
+								wordspace[i] = '0';
+							}
+							strcpy(wordspace + i, line.operand1);
+							strcpy(Trecord + Tcount, wordspace);
+							Tcount += 6;
+							
+						}
+						else if(line.fmt == FMT3 && line.operand1[0] == '\0'){
+							recode += 3;
+							sprintf(hex_string, "%X", recode);
+							strcpy(obcode[line_count].obcode, hex_string);
+							obcode[line_count].obcode[2] = '0';
+							obcode[line_count].obcode[3] = '0';
+							obcode[line_count].obcode[4] = '0';
+							obcode[line_count].obcode[5] = '0';
+							//printf("%s %s  %d\n",line.operand1 ,obcode[line_count].obcode,Tcount);
+							strcpy(Trecord + Tcount, obcode[line_count].obcode);
+							Tcount += 6;
+						}
+						
+					}
+					
 					if(line.fmt == FMT3){
 						Tfmt += 3;
 					}
@@ -382,24 +477,33 @@ int main(int argc, char *argv[])
 							Tfmt += 1;
 						else if(line.op[3] == 'B' && Tfmt > 0){
 							printf("T%06X%02X%s\n",Taddress,Tfmt,Trecord);
+							memset(Trecord, '\0', sizeof(Trecord));
 							Taddress = addresstab[line_count+1];	
 							Tfmt = 0;
+							Tcount = 0;
 						}
 						else if(line.op[3] == 'W' && Tfmt > 0){
 							printf("T%06X%02X%s\n",Taddress,Tfmt,Trecord);
+							memset(Trecord, '\0', sizeof(Trecord));
 							Taddress = addresstab[line_count+1];	
 							Tfmt = 0;
+							Tcount = 0;
 						} 	
 					}
 					if(Tcount == 60){
-						
-						Taddress = addresstab[line_count+1];	
+						printf("T%06X%02X%s\n",Taddress,Tfmt,Trecord);	
+						Taddress = addresstab[line_count+1];
+						memset(Trecord, '\0', sizeof(Trecord));
 						Tfmt = 0;
+						Tcount = 0;
 					}
 				}
 				if(line_count == pro_count){
 					Taddress = addresstab[line_count];
 					printf("T%06X%02X%s\n",Taddress,Tfmt,Trecord);
+					memset(Trecord, '\0', sizeof(Trecord));
+					Tfmt = 0;
+					Tcount = 0;
 				}
 				
 				
